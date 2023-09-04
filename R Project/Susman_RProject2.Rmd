@@ -1,0 +1,773 @@
+---
+title: "Data Science Salary Analysis"
+author: "Sue Susman, MEd, BSN, RN"
+date: "`r Sys.Date()`"
+output: 
+  word_document: 
+    toc: yes
+    fig_caption: yes
+    keep_md: yes
+    toc_depth: 7
+  pdf_document: 
+    toc: yes
+    toc_depth: 7
+    fig_caption: yes
+    number_sections: yes
+    keep_tex: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Project Overview:
+
+The CEO of the small, but rapidly expanding company that I work for are interested in hiring a full-time data scientist in the Mid- to Senior experience level.
+The position has the potential to be remote for the right candidate.
+My research wil include salary differences between hiring someone in the US vs. someone outside of the US.
+I will analyze the data to find the salary distribution of emplyee residence, job title, and experience level, among other factors in order to determine a reasonable salary range that will get us the best talent.
+Factors to consider include rising salaries in the recession, along with a highly competitive job market.
+
+```{r}
+setwd("~/Desktop/Data Science Files/DSE 5002 R & Python Programming/GitHub/DSE5002/R Project")
+library(reshape)
+library(tidyverse)
+library(tidyr)
+library(ggplot2)
+library(gplots)
+library(forecast)
+library(dplyr)
+```
+
+# Input the Data:
+
+```{r Data Import}
+
+library(readr)
+data_df <- read_csv("data.csv")
+head(data_df)
+```
+
+Checking the dimensions of a dataframe can be useful for understanding the size and structure of your data and for performing various operations and analyses based on the number of rows and columns present.
+
+```{r Check the dimensions of the dataset}
+#checking dimension of data `data_df`
+data_dimensions <- dim(data_df)
+num_rows <- data_dimensions[1]
+num_cols <- data_dimensions[2]
+
+text <- paste("There are", num_rows,"Rows", "and", num_cols, "Columns", "in this dataset")
+
+print(text)
+```
+
+```{r}
+t(t(names(data_df))) ##display column names in a user friendly manner
+```
+
+The metadata are as follows:
+
+-   **work_year** : The year the salary was paid.
+
+-   **experience_level** : The experience level in the job during the year with the following possible values: EN (Entry-Level/Junior), MI (Mid-Level/Intermediate), SE (Senior-Level/Expert), EX (Executive-Level/Director).
+
+-   **emoyment_type** : The type of employment for the role: PT (Part-Time), FT (Full-Time), CT (Contract), FL (Freelance).
+
+-   **title** : The role worked in during the year.
+
+-   **salary** : The total gross salary amount paid.
+
+-   **salary_currency** : The currency of the salary paid as an ISO 4217 currency code.
+
+-   **salary_in_usd** : The salary in USD (FX rate divided by avg. USD rate for the respective year via fxdata.foorilla.com).
+
+-   **employee_residence** : Employee's primary country of residence during the work year as an ISO 3166 country code.
+
+-   **remote_ratio** : The overall amount of work done remotely, possible values are as follows: 0 (No remote work [less than 20%]), 50 (Partially remote), 100 (Fully remote [more than 80%]).
+
+-   **company_location** : The country of the employer's main office or contracting branch as an ISO 3166 country code.
+
+-   **company_size** : The average number of people that worked for the company during the year: S (less than 50 employees [small]), M (50 to 250 employees [medium]), L (more than 250 employees [large]).
+
+# Clean the Data
+
+```{r Step 1: Check the structure of the data types.}
+str(data_df)
+```
+
+From the data, I found data that needed to be converted to factor and/or numeric types.
+
+1.  Factors allow for better analysis and visualization of categorical variables.
+    They provide useful summary statistics, facilitate grouping and aggregation, and enable the creation of meaningful plots and charts that highlight the relationships between different categories.
+
+2.  Numeric variables can be easily visualized using various graphical representations, such as histograms, scatter plots, and box plots.
+    Visualizations provide insights into the distribution and relationships of numeric data, aiding in exploratory data analysis and communication of findings.
+
+<https://r4ds.had.co.nz/tidy-data.html>
+
+**The following data will be converted to factor types:**
+
+-   experience_level
+
+-   employment_type
+
+-   job_title
+
+-   salary_currency
+
+-   employee_residence
+
+-   company_location
+
+-   company_size
+
+```{r}
+data_df$experience_level <- as.factor(data_df$experience_level)
+data_df$employment_type <- as.factor(data_df$employment_type)
+data_df$job_title <- as.factor(data_df$job_title)
+data_df$salary_currency <- as.factor(data_df$salary_currency)
+data_df$employee_residence <- as.factor(data_df$employee_residence)
+data_df$company_location <- as.factor(data_df$company_location)
+data_df$company_size <- as.factor(data_df$company_size)
+```
+
+**The following data will be converted to numeric types:**
+
+-   work_year
+
+-   salary
+
+-   salary_in_usd
+
+-   remote_ratio
+
+```{r}
+data_df$work_year <- as.numeric(data_df$work_year)
+data_df$salary <- as.numeric(data_df$salary)
+data_df$salary_in_usd <- as.numeric(data_df$salary_in_usd)
+data_df$remote_ratio <- as.numeric(data_df$remote_ratio)
+```
+
+Recheck the structure of the data:
+
+```{r}
+str(data_df)
+```
+
+## 
+
+```{r Step 2:Check for values}
+anyNA(data_df) # The result shows that the data does not have any missing values
+```
+
+### **The third step is to drop the column that unnecessary**
+
+If I pay attention the data `ds`, column `X` is unnecessary, so it is better if I remove it from the data.
+
+```{r Step 3: Drop the unneeded column}
+data_df <- data_df[ , -c(1)] #this code drops the first columns which is not needed.
+data_df
+```
+
+This shows that column "X" was dropped from the dataset.
+
+```{r Filter Specific Job Titles}
+library(ggplot2)
+library(dplyr)
+
+job_titles <- c("Data Scientist", "Data Science Manager", "Lead Data Scientist", "Staff Data Scientist", "Principal Data Scientist", "Director of Data Science")  # Specifies the desired job titles used in this analysis.
+
+filtered_data <- data_df %>% filter(job_title %in% job_titles)
+filtered_data
+
+```
+
+```{r}
+# Subset the data for US and Other Countries
+us_data <- subset(filtered_data, employee_residence == "US")
+other_countries_data <- subset(filtered_data, employee_residence != "US")
+
+us_data
+other_countries_data
+```
+
+# Data Analysis
+
+The next phase is to analyze the data to answer the questions in the introduction using the information from the dataset.
+
+```{r}
+#Check summary from data ds
+summary(filtered_data)
+```
+
+From this summary, I can see that the dataset contains data from:
+
+-   work years 2020-2022
+
+-   four experience levels, EN (Entry Level), MI (Mid-Level), SE (Senior-Level,) and EX (Executive-Level)
+
+-   four employment types, CT (Contract), FL (Freelance), FT (Full Time), and PT for (Part Time)
+
+-   the lowest and highest salary paid, as well as other information that could impact our results
+
+```{r}
+anyNA(filtered_data)
+```
+
+It's usually easier to understand data in a graphical format, so below are simple plots to show data from experience level, employment type, and company_size.
+
+```{r}
+# experience_level
+plot(filtered_data$experience_level)
+```
+
+```         
+```
+
+```{r}
+plot(filtered_data$employment_type)
+```
+
+```{r}
+# Company Size
+plot(filtered_data$company_size)
+```
+
+```{r}
+# Filter the dataset for the desired experience level
+filtered_data <- data_df[data_df$experience_level %in% c("MI", "SE", "EN"), ]
+
+# Calculate the salary statistics for US candidates
+us_salary_stats <- summary(filtered_data[filtered_data$employee_residence == "US", ]$salary_in_usd)
+us_average_salary <- mean(filtered_data[filtered_data$employee_residence == "US", ]$salary_in_usd)
+
+# Calculate the salary statistics for non-US candidates
+non_us_salary_stats <- summary(filtered_data[filtered_data$employee_residence != "US", ]$salary_in_usd)
+non_us_average_salary <- mean(filtered_data[filtered_data$employee_residence != "US", ]$salary_in_usd)
+
+# Print the salary statistics and average salaries for US and non-US candidates
+print("Salary Statistics for US Candidates:")
+print(us_salary_stats)
+
+print(paste0("Average Salary for US Candidates: $", format(us_average_salary, big.mark = ",", decimal.mark = ".", digits = 2)))
+
+print("Salary Statistics for Non-US Candidates:")
+print(non_us_salary_stats)
+
+print(paste0("Average Salary for Non-US Candidates: $", format(non_us_average_salary, big.mark = ",", decimal.mark = ".", digits = 2)))
+
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+
+# Filter the dataset for the desired experience level
+filtered_data <- data_df[data_df$experience_level %in% c("MI", "SE", "EX"), ]
+
+# Calculate the salary statistics for US candidates
+us_salary_stats <- summary(filtered_data[filtered_data$employee_residence == "US", ]$salary_in_usd)
+us_average_salary <- mean(filtered_data[filtered_data$employee_residence == "US", ]$salary_in_usd)
+
+# Calculate the salary statistics for non-US candidates
+non_us_salary_stats <- summary(filtered_data[filtered_data$employee_residence != "US", ]$salary_in_usd)
+non_us_average_salary <- mean(filtered_data[filtered_data$employee_residence != "US", ]$salary_in_usd)
+
+# Create a data frame for the average salaries
+average_salary_df <- data.frame(
+  Category = c("US Employees", "Non-US Employees"),
+  Average_Salary = c(us_average_salary, non_us_average_salary)
+)
+
+# Create the bar graph
+ggplot(average_salary_df, aes(x = Category, y = Average_Salary, fill = Category)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  labs(title = "Average Salary Comparison", x = "Employee Type", y = "Average Salary (in USD)") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+
+# Filter the dataset for the desired experience l
+filtered_data <- filtered_data[filtered_data$experience_level %in% c("MI", "SE", "EX"), ]
+
+# Subset the data for US and Other Countries
+us_data <- subset(filtered_data, employee_residence == "US")
+other_countries_data <- subset(filtered_data, employee_residence != "US")
+
+# Combine non-US countries into "Other countries"
+other_countries_data$employee_residence <- "Other countries"
+
+# Combine the US and other countries data
+combined_data <- rbind(us_data, other_countries_data)
+
+# Create a box plot comparing salaries for US and non-US candidates
+ggplot(combined_data, aes(x = employee_residence, y = salary_in_usd)) +
+  geom_boxplot(fill = "green", color = "blue", outlier.color = "red", outlier.shape = "o", width = 0.2) +
+  labs(title = "Salary Distribution: US vs Non-US Employees", x = "Employee Residence", y = "Salary (in USD)") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+
+# Filter the dataset for the desired experience l
+filtered_data <- filtered_data[filtered_data$experience_level %in% c("MI", "SE", "EX"), ]
+
+# Subset the data for US and Other Countries
+us_data <- subset(filtered_data, employee_residence == "US")
+other_countries_data <- subset(filtered_data, employee_residence != "US")
+
+# Combine non-US countries into "Other countries"
+other_countries_data$employee_residence <- "Other countries"
+
+# Combine the US and other countries data
+combined_data <- rbind(us_data, other_countries_data)
+
+# Create a box plot comparing salaries for US and non-US candidates
+ggplot(combined_data, aes(x = employee_residence, y = salary_in_usd)) +
+  geom_boxplot(fill = "green", color = "blue", outlier.color = "red", outlier.shape = "o", width = 0.2) +
+  labs(title = "Salary Distribution: US vs Non-US Employees", x = "Employee Residence", y = "Salary (in USD)") +
+  scale_y_continuous(labels = comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Calculate the salary statistics for each experience level
+experience_levels <- c("MI", "SE", "EN")
+salary_stats <- lapply(experience_levels, function(level) {
+  filtered_data <- data_df[data_df$experience_level == level, ]
+  stats <- summary(filtered_data$salary_in_usd)
+  return(stats)
+})
+
+# Print the salary statistics for each experience level
+for (i in seq_along(experience_levels)) {
+  level <- experience_levels[i]
+  stats <- salary_stats[[i]]
+  
+  print(paste0("Salary Statistics for Experience Level ", level, ":"))
+  print(stats)
+}
+```
+
+```{r}
+# Create a separate box plot for each experience level
+for (level in experience_levels) {
+  filtered_data_level <- filtered_data[filtered_data$experience_level == level, ]
+  
+  boxplot(filtered_data_level$salary_in_usd, 
+          main = paste0("Salary Distribution - ", level),
+          xlab = "Experience Level",
+          ylab = "Salary in USD")
+}
+
+```
+
+Let's Answer The Business Questions
+
+1.  From the dataset, check the average salary per job title in each work year (2020, 2021, 2022) to determine which job title has the highest average salary every year along with the trend.
+
+```{r}
+# Define the job titles to include in the analysis
+included_job_titles <- c("Data Scientist", "Data Science Manager", "Lead Data Scientist", "Staff Data Scientist", "Principal Data Scientist", "Director of Data Science")
+
+# Filter the dataset for the desired job titles
+filtered_data <- filtered_data[filtered_data$job_title %in% included_job_titles, ]
+
+# 2020
+data_df2020 <- filtered_data[filtered_data$work_year == 2020, ]
+
+# Calculate mean salary by job title
+hasil1 <- aggregate(salary_in_usd ~ job_title, data = data_df2020, FUN = mean)
+
+# Sort the data in decreasing order of salary
+sorted_data <- hasil1[order(hasil1$salary_in_usd, decreasing = TRUE), ]
+
+# Format the salary column with dollar sign, commas, decimal point, and two digits beyond the decimal point
+sorted_data$formatted_salary <- paste0("$", format(round(sorted_data$salary_in_usd, 2), big.mark = ",", decimal.mark = ".", nsmall = 2))
+
+# Display the sorted data with formatted salary
+head(sorted_data)
+
+
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+
+# Create the plot using ggplot
+ggplot(sorted_data, aes(x = job_title, y = salary_in_usd)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  labs(title = "Mean Salaries by Job Title (2020)",
+       x = "Job Title",
+       y = "Mean Salary (in USD)") +
+  scale_y_continuous(labels = dollar_format(prefix = "$", big.mark = ",", decimal.mark = ".", digits = 2)) +
+  theme_minimal()
+
+
+```
+
+```{r}
+
+```
+
+```{r}
+# Define the job titles to include in the analysis
+included_job_titles <- c("Data Scientist", "Data Science Manager", "Lead Data Scientist", "Staff Data Scientist", "Principal Data Scientist", "Director of Data Science")
+
+# Filter the dataset for the desired job titles
+filtered_data <- filtered_data[filtered_data$job_title %in% included_job_titles, ]
+# 2021
+data_df2021 <- filtered_data[filtered_data$work_year == 2021, ]
+
+# Calculate mean salary by job title
+hasil2 <- aggregate(salary_in_usd ~ job_title, data = data_df2021, FUN = mean)
+
+# Sort the data in decreasing order of salary
+sorted_data <- hasil2[order(hasil2$salary_in_usd, decreasing = TRUE), ]
+
+# Format the salary column with dollar sign, commas, decimal point, and two digits beyond the decimal point
+sorted_data$formatted_salary <- paste0("$", format(round(sorted_data$salary_in_usd, 2), big.mark = ",", decimal.mark = ".", nsmall = 2))
+
+# Display the sorted data with formatted salary
+head(sorted_data)
+```
+
+```{r}
+# Define the job titles to include in the analysis
+included_job_titles <- c("Data Scientist", "Data Science Manager", "Lead Data Scientist", "Staff Data Scientist", "Principal Data Scientist", "Director of Data Science")
+
+# Filter the dataset for the desired job titles
+filtered_data <- filtered_data[filtered_data$job_title %in% included_job_titles, ]
+
+# 2021
+data_df2021 <- filtered_data[filtered_data$work_year == 2021, ]
+
+# Calculate mean salary by job title
+hasil2 <- aggregate(salary_in_usd ~ job_title, data = data_df2021, FUN = mean)
+
+# Sort the data in decreasing order of salary
+sorted_data <- hasil2[order(hasil3$salary_in_usd, decreasing = TRUE), ]
+
+# Format the salary column with dollar sign, commas, decimal point, and two digits beyond the decimal point
+sorted_data$formatted_salary <- paste0("$", format(round(sorted_data$salary_in_usd, 2), big.mark = ",", decimal.mark = ".", nsmall = 2))
+
+# Display the sorted data with formatted salary
+head(sorted_data)
+```
+
+```{r}
+# Define the job titles to include in the analysis
+included_job_titles <- c("Data Scientist", "Data Science Manager", "Lead Data Scientist", "Staff Data Scientist", "Principal Data Scientist", "Director of Data Science")
+
+# Filter the dataset for the desired job titles
+filtered_data <- filtered_data[filtered_data$job_title %in% included_job_titles, ]
+# 2022
+data_df2022 <- filtered_data[filtered_data$work_year == 2022, ]
+
+# Calculate mean salary by job title
+hasil3 <- aggregate(salary_in_usd ~ job_title, data = data_df2022, FUN = mean)
+
+# Sort the data in decreasing order of salary
+sorted_data <- hasil3[order(hasil3$salary_in_usd, decreasing = TRUE), ]
+
+# Format the salary column with dollar sign, commas, decimal point, and two digits beyond the decimal point
+sorted_data$formatted_salary <- paste0("$", format(round(sorted_data$salary_in_usd, 2), big.mark = ",", decimal.mark = ".", nsmall = 2))
+
+# Display the sorted data with formatted salary
+head(sorted_data)
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+
+# Create the plot using ggplot
+ggplot(sorted_data, aes(x = job_title, y = salary_in_usd)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(title = "Mean Salaries by Job Title (2022)",
+       x = "Job Title",
+       y = "Mean Salary (in USD)") +
+  scale_y_continuous(labels = dollar_format(prefix = "$", big.mark = ",", decimal.mark = ".", digits = 2)) +
+  theme_minimal()
+
+```
+
+Answer:
+
+There are so many jobs in the data science domain, the results shown above indicate average salary (in USD) in every job in data science domain globally not differentiated by experience levels, employment type, company size and other.
+Based on the results, the highest average salary in 2020 is Director of Data Science, in 2021 is Financial Data Analyst, and in 2022 is Data Analytics Lead.
+
+2.  What country does company from that give salary more than average salary for job as a data scientist in 2021?
+
+```{r}
+# Filter the data for each year
+data_2020 <- filtered_data[filtered_data$work_year == 2020, ]
+data_2021 <- filtered_data[filtered_data$work_year == 2021, ]
+data_2022 <- filtered_data[filtered_data$work_year == 2022, ]
+
+# Calculate average salary by country for each year
+avg_salary_2020 <- aggregate(salary_in_usd ~ company_location, data = data_2020, FUN = mean)
+avg_salary_2021 <- aggregate(salary_in_usd ~ company_location, data = data_2021, FUN = mean)
+avg_salary_2022 <- aggregate(salary_in_usd ~ company_location, data = data_2022, FUN = mean)
+
+# Format the average salaries with desired formatting
+format_salary <- function(salary) {
+  formatted_salary <- format(salary, big.mark = ",", decimal.mark = ".", digits = 2, nsmall = 2)
+  paste0("$", formatted_salary)
+}
+
+avg_salary_2020$formatted_salary <- format_salary(avg_salary_2020$salary_in_usd)
+avg_salary_2021$formatted_salary <- format_salary(avg_salary_2021$salary_in_usd)
+avg_salary_2022$formatted_salary <- format_salary(avg_salary_2022$salary_in_usd)
+
+# Sort the data by salary in decreasing order for each year
+sorted_avg_salary_2020 <- avg_salary_2020[order(avg_salary_2020$salary_in_usd, decreasing = TRUE), ]
+sorted_avg_salary_2021 <- avg_salary_2021[order(avg_salary_2021$salary_in_usd, decreasing = TRUE), ]
+sorted_avg_salary_2022 <- avg_salary_2022[order(avg_salary_2022$salary_in_usd, decreasing = TRUE), ]
+
+# Print the data
+cat("Countries with salaries higher than average for Data Scientists in 2020:\n")
+head(sorted_avg_salary_2020)
+
+cat("\nCountries with salaries higher than average for Data Scientists in 2021:\n")
+head(sorted_avg_salary_2021)
+
+cat("\nCountries with salaries higher than average for Data Scientists in 2022:\n")
+head(sorted_avg_salary_2022)
+
+
+```
+
+Answer :
+
+The result shows 6 countries that give more than average salary for job as data scientist in 2021
+
+-   US : United States
+
+-   CA : Canada
+
+-   IL : Israel
+
+-   DE : Germany
+
+-   GB : United Kingdom
+
+-   FR : France
+
+3.  There is a student, she wants to take a part time job in the data science domain because she has understood about data science and her experience is Middle Level. But, she feels confuse which company's country she has to choose (Part time job online). She wants to get high salary for her job. Let's help her to choose the right choice based on average salary in data `ds`.
+
+To compare data science salaries in the United States with offshore locations using your data, you can follow these steps:
+
+1.  Subset the Data: Create separate datasets for the United States and offshore locations.
+
+```{r}
+# Subset data for the United States
+us_data <- filtered_data[filtered_data$company_location == "US", ]
+
+# Subset data for offshore locations
+offshore_data<- filtered_data[filtered_data$company_location != "US", ]
+
+us_data
+offshore_data
+
+```
+
+```{r}
+# Assuming you have the cost of living index for the United States and offshore locations stored in variables
+cost_of_living_index_us <- 1.0  # Cost of living index for the United States
+cost_of_living_index_offshore <- 0.8  # Cost of living index for offshore locations (example value)
+
+# Normalize salaries in offshore locations by multiplying them with the cost of living index ratio
+offshore_data$salary_normalized <- offshore_data$salary_in_usd * (cost_of_living_index_offshore / cost_of_living_index_us)
+offshore_data$salary_normalized
+
+```
+
+```{r}
+average_salary_us <- mean(filtered_data$salary_in_usd * cost_of_living_index_us, na.rm = TRUE)
+average_salary_offshore <- mean(offshore_data$salary_in_usd * cost_of_living_index_offshore, na.rm = TRUE)
+average_salary_offshore
+average_salary_us
+```
+
+```{r}
+# Perform multiple linear regression analysis
+model <- lm(salary_in_usd ~ experience_level + company_location + job_title, data = filtered_data)
+
+# Print the regression summary
+summary(model)
+
+# Extract coefficient estimates and p-values
+coefficients <- coef(model)
+p_values <- summary(model)$coefficients[, 4]
+
+# Identify significant factors
+significant_factors <- names(coefficients)[p_values < 0.05]
+
+# Print coefficient estimates and p-values
+print(coefficients)
+print(p_values)
+
+# Interpret the coefficients and identify key factors
+key_factors <- significant_factors
+
+# Report findings
+print("Significant Factors:")
+print(key_factors)
+
+```
+
+```{r}
+# Perform multiple linear regression analysis
+model <- lm(salary_in_usd ~ experience_level + job_title, data = data_df)
+
+# Print the regression summary
+summary(model)
+
+# Extract coefficient estimates and p-values
+coefficients <- coef(model)
+p_values <- summary(model)$coefficients[, 4]
+
+# Identify significant factors
+significant_factors <- names(coefficients)[p_values < 0.05]
+
+# Print coefficient estimates and their impact on salaries
+print("Coefficient Estimates:")
+print(coefficients)
+
+# Print p-values
+print("P-values:")
+print(p_values)
+
+# Identify key factors with the most significant effect on salaries
+key_factors <- significant_factors
+
+# Print key factors
+print("Key Factors:")
+print(key_factors)
+
+```
+
+Calculate Average Salaries: Calculate the average salary for data scientists in the United States and offshore locations.
+
+```{r}
+# Calculate average salary in the United States
+average_salary_us <- mean(us_data$salary_in_usd, na.rm = TRUE)
+
+# Calculate average salary in offshore locations
+average_salary_offshore <- mean(offshore_data$salary_in_usd, na.rm = TRUE)
+
+```
+
+3.  Consider Additional Factors: Consider additional factors such as cost of living, talent availability, and market demand to provide context for the salary differences.
+    You can incorporate these factors into your analysis by adjusting the average salaries based on these considerations.
+
+4.  Determine the Difference in Salaries: Calculate the difference in average salaries between the United States and offshore locations.
+
+```{r}
+salary_difference <- average_salary_us - average_salary_offshore
+salary_difference
+```
+
+**the data and display column names within dataset:**
+
+```{r Dataset Summary}
+# Handing missing data
+
+# Check which columns have missing values
+summary(data_df)
+```
+
+```{r Job Title List}
+job_titles <- unique(ds_df$job_title)
+print(job_titles)
+```
+
+```{r Dataset Filtered by Specific Job Titles}
+library(ggplot2)
+library(dplyr)
+
+job_titles <- c("Data Scientist", "Data Science Manager", "Lead Data Scientist", "Staff Data Scientist", "Principal Data Scientist", "Director of Data Science")  # Specify the desired job titles
+
+filtered_data <- ds_df %>% filter(job_title %in% job_titles)
+filtered_data
+
+```
+
+```{r Average Salary}
+filtered_data_summary <- summary(filtered_data$salary_in_usd)
+average_salary <- mean(filtered_data$salary_in_usd, na.rm = TRUE)
+median_salary <- median(filtered_data$salary_in_usd, na.rm = TRUE)
+minimum_salary <- min(filtered_data$salary_in_usd, na.rm = TRUE)
+maximum_salary <- max(filtered_data$salary_in_usd, na.rm = TRUE)
+
+# Format the summary statistics
+formatted_summary <- format(filtered_data_summary, big.mark = ",", decimal.mark = ".", scientific = FALSE)
+formatted_average_salary <- format(round(average_salary, 2), big.mark = ",", decimal.mark = ".", scientific = FALSE)
+formatted_median_salary <- format(median_salary, big.mark = ",", decimal.mark = ".", scientific = FALSE)
+formatted_minimum_salary <- format(minimum_salary, big.mark = ",", decimal.mark = ".", scientific = FALSE)
+formatted_maximum_salary <- format(maximum_salary, big.mark = ",", decimal.mark = ".", scientific = FALSE)
+
+# Print the formatted summary statistics
+print(formatted_summary)
+print(paste0("Average Salary: $", formatted_average_salary))
+print(paste0("Median Salary: $", formatted_median_salary))
+print(paste0("Minimum Salary: $", formatted_minimum_salary))
+print(paste0("Maximum Salary: $", formatted_maximum_salary))
+```
+
+```{r Salary vs. Job Title}
+library(ggplot2)
+
+options(scipen = 999)
+ggplot(filtered_data, aes(x = as.factor(job_title), y = salary_in_usd, fill = factor(job_title))) +
+  geom_boxplot(outlier.color = "red", outlier.shape = "o") +
+  labs(title = "Salary vs. Job Title", x = "Job Title", y = "Salary (in 000s)")
+```
+
+```{r Average Salary}
+average_salary_by_job <- aggregate(salary_in_usd ~ job_title, data = filtered_data, FUN = mean)
+
+formatted_salaries <- format(average_salary_by_job$salary_in_usd, big.mark = ",", decimal.mark = ".", digits = 2, nsmall = 2)
+formatted_salaries_with_dollar <- paste0("$", formatted_salaries)
+
+# Print the job titles and corresponding formatted salaries
+for (i in 1:nrow(average_salary_by_job)) {
+  job_title <- average_salary_by_job$job_title[i]
+  salary <- formatted_salaries_with_dollar[i]
+  print(paste0(job_title, ": ", salary))
+}
+```
+
+```{r Salary vs. Job Title}
+ggplot(ds_df, aes(x = as.factor (employment_type), y = salary_in_usd, fill = factor (employment_type))) + 
+  geom_boxplot(outlier.color = "red", outlier.shape = "o")+
+  labs(title = "Salary vs. Employment Type", x = "Employment Type", y = "Salary (in 000s)")
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+job_titles <- c("Job Title 1", "Job Title 2", "Job Title 3")  # Specify the desired job titles
+
+filtered_data <- ds_df %>% filter(job_title %in% job_titles)
+
+ggplot(filtered_data, aes(x = as.factor(job_title), y = salary_in_usd, fill = factor(job_title))) +
+  geom_boxplot(outlier.color = "red", outlier.shape = "o") +
+  labs(title = "Salary vs. Job Title", x = "Job Title", y = "Salary (in 000s)")
+
+```
